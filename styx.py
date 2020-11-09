@@ -52,10 +52,15 @@ class Cell:
 
 def exec_then_eval(block):
     # assumes last node is an expression
-    last = ast.Expression(block.body.pop().value)
+    if isinstance(block.body[-1], ast.Expr):
+        last = ast.Expression(block.body.pop().value)
 
-    exec(compile(block, '<string>', mode='exec'), context_globals, context_locals)
-    return eval(compile(last, '<string>', mode='eval'), context_globals, context_locals)
+        exec(compile(block, '<string>', mode='exec'), context_globals, context_locals)
+        return eval(compile(last, '<string>', mode='eval'), context_globals, context_locals)
+    else:
+        exec(compile(block, '<string>', mode='exec'), context_globals, context_locals)
+        return None
+
 
 class FindReferencesAndAssignments(ast.NodeVisitor):
     def __init__(self):
