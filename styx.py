@@ -74,10 +74,18 @@ class FindReferencesAndAssignments(ast.NodeVisitor):
         self.references.append(node.id)
 
 root = Tk()
+canvas = Canvas(root, width=650, height=600)
+canvas.pack(side=LEFT, expand=YES, fill=BOTH)
+scrollbar = Scrollbar(root, command=canvas.yview)
+scrollbar.pack(side=LEFT, fill='y')
+canvas.configure(yscrollcommand=scrollbar.set)
+def update_scroll_region():
+    canvas.configure(scrollregion=canvas.bbox('all'))
+canvas.bind('<Configure>', lambda _: update_scroll_region())
 
 def generate_cell(frame):
     textarea = Text(frame, height=10)
-    textarea.pack(expand=YES, fill=BOTH)
+    textarea.pack()
     textvar = StringVar()
     cell = Cell(textvar, textarea)
     l = Label(frame, textvariable=textvar)
@@ -87,13 +95,17 @@ def generate_cell(frame):
 
     return cell
 
-frame = Frame(root)
+frame = Frame(canvas)
+canvas.create_window((0, 0), window=frame, anchor='nw')
+
 generate_cell(frame)
 generate_cell(frame)
 
-frame.pack()
+def add_cell():
+    generate_cell(frame)
+    update_scroll_region()
 
-add_cell_button = Button(root, text='Add cell', command = lambda: generate_cell(frame))
+add_cell_button = Button(root, text='Add cell', command = add_cell)
 add_cell_button.pack()
 
 root.mainloop()
