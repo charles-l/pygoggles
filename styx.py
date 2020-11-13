@@ -152,6 +152,13 @@ root.mainloop()
 #       (maybe even attach to a process?) so that you can have cells
 #       run before/after/around another function (aspect oriented style)
 #       allowing you to debug code more easily
+# TODO: add persisting cells/results
+# TODO: add performance tracking (with graphs, and historized runs)
+# TODO: add ability to convert cell with output into an expect test
+# TODO: add editor integration so that you can hover on a function and
+#       see what's happening live
+# TODO: add history functionality so that code with its inputs and outputs can be
+#       scrobbled through over time (a lightweight undo/redo source control thing?)
 # TODO: build a section() helper, so you can annotate code more easily:
 #
 #         some code
