@@ -1,14 +1,30 @@
 from tkinter import *
-from tkinter import ttk
 import sys
 import ast
 import uuid
+import os
 from dataclasses import dataclass, field
+import pyinotify # type: ignore
+import importlib
 
 context_globals = {}
 context_locals = {}
 definitions = {}
 references = {}
+imports = {}
+
+class OnWriteHandler(pyinotify.ProcessEvent):
+    def process_IN_MODIFY(self, event):
+        print('==> Modification detected', event.pathname)
+        if event.pathname in imports:
+            for c in imports[event.pathname]:
+                print('rerunning', c.textbox.get('0.0', 'end'))
+                c.run(rerun_imports=True)
+
+watch_manager = pyinotify.WatchManager()
+# TODO: use pyinotify.Notifier instead
+import_file_notifier = pyinotify.ThreadedNotifier(watch_manager, OnWriteHandler())
+import_file_notifier.start()
 
 @dataclass
 class Cell:
@@ -23,7 +39,7 @@ class Cell:
     def code(self):
         return self.textbox.get('0.0', 'end')
 
-    def run(self):
+    def run(self, rerun_imports=False):
         program_text = self.textbox.get('0.0', 'end')
 
         tree = ast.parse(program_text, mode='exec')
@@ -40,17 +56,33 @@ class Cell:
                 references[r] = set()
             references[r].add(self)
 
-        #print(definitions, references)
+        for module_name in v.imports:
+            module_has_been_imported = module_name in context_locals
 
-        result = exec_then_eval(tree)
+            if module_has_been_imported:
+                path = context_locals[module_name].__file__
+                if rerun_imports:
+                    print('reimporting ', context_locals[module_name])
+                    importlib.reload(context_locals[module_name])
+                imports[path].add(self)
+            else:
+                exec('import {}'.format(module_name), context_globals, context_locals)
+                path = context_locals[module_name].__file__
+
+                imports[path] = set()
+                # TODO: recursively parse python module dependencies
+                #       so if any files change, the entire thing gets reimported
+                watch_manager.add_watch(os.path.dirname(path), pyinotify.IN_MODIFY)
+
+        result = exec_block(tree)
         self.output_text.set(repr(result))
 
-        for a in v.assigns:
-            for c in references.get(a, set()):
-                if c != self: # TODO: detect and prevent cycles
-                    c.run()
+        for ref in v.assigns + v.imports:
+            for cell in references.get(ref, set()):
+                if cell != self: # TODO: detect and prevent cycles
+                    cell.run()
 
-def exec_then_eval(block):
+def exec_block(block):
     # assumes last node is an expression
     if isinstance(block.body[-1], ast.Expr):
         last = ast.Expression(block.body.pop().value)
@@ -66,6 +98,10 @@ class FindReferencesAndAssignments(ast.NodeVisitor):
     def __init__(self):
         self.assigns = []
         self.references = []
+        self.imports = []
+
+    def visit_Import(self, node):
+        self.imports.extend([x.name for x in node.names])
 
     def visit_Assign(self, node):
         self.assigns.extend(x.id for x in node.targets)
@@ -110,6 +146,7 @@ add_cell_button.pack()
 
 root.mainloop()
 
+# TODO: throw error/cleanup when a variable gets undefined
 # TODO: extend so that graphical results can be printed
 # TODO: extend so you can inject it into another python script
 #       (maybe even attach to a process?) so that you can have cells
