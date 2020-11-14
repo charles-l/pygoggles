@@ -26,6 +26,22 @@ watch_manager = pyinotify.WatchManager()
 import_file_notifier = pyinotify.ThreadedNotifier(watch_manager, OnWriteHandler())
 import_file_notifier.start()
 
+def _get_field(name, context):
+    '''Lookup a field in a context using its name, properly traversing
+       fields/values (i.e. `some_obj.field` or `some_obj['field']`). Returns
+       bool indicating whether the value is defined and the associated
+       value if it is.'''
+    subfields = name.split('.')
+    c = context
+    for i, f in enumerate(subfields):
+        if type(c) == dict and f in c:
+            c = c[f]
+        elif hasattr(c, f):
+            c = getattr(c, f)
+        else:
+            return False, None
+    return True, c
+
 @dataclass
 class Cell:
     output_text: StringVar
@@ -56,18 +72,25 @@ class Cell:
                 references[r] = set()
             references[r].add(self)
 
-        for module_name in v.imports:
-            module_has_been_imported = module_name in context_locals
+        for module_name, module_alias in v.import_statements.items():
+            was_imported, module = _get_field(module_alias, context_locals)
 
-            if module_has_been_imported:
-                path = context_locals[module_name].__file__
+            if was_imported:
+                path = module.__file__
                 if rerun_imports:
-                    print('reimporting ', context_locals[module_name])
-                    importlib.reload(context_locals[module_name])
+                    print('reimporting ', module)
+                    importlib.reload(module)
                 imports[path].add(self)
             else:
-                exec('import {}'.format(module_name), context_globals, context_locals)
-                path = context_locals[module_name].__file__
+                if module_name != module_alias:
+                    exec(f'import {module_name} as {module_alias}', context_globals, context_locals)
+                else:
+                    exec(f'import {module_name}', context_globals, context_locals)
+
+                was_imported, module = _get_field(module_alias, context_locals)
+                assert was_imported, "Uh... it should have been imported with the previous exec??"
+
+                path = module.__file__
 
                 imports[path] = set()
                 # TODO: recursively parse python module dependencies
@@ -77,7 +100,7 @@ class Cell:
         result = exec_block(tree)
         self.output_text.set(repr(result))
 
-        for ref in v.assigns + v.imports:
+        for ref in v.assigns + list(v.import_statements.values()):
             for cell in references.get(ref, set()):
                 if cell != self: # TODO: detect and prevent cycles
                     cell.run()
@@ -98,10 +121,12 @@ class FindReferencesAndAssignments(ast.NodeVisitor):
     def __init__(self):
         self.assigns = []
         self.references = []
-        self.imports = []
+        self.import_statements = {}
 
     def visit_Import(self, node):
-        self.imports.extend([x.name for x in node.names])
+        for x in node.names:
+            # use an import alias if there is one
+            self.import_statements[x.name] = x.asname if x.asname else x.name
 
     def visit_Assign(self, node):
         self.assigns.extend(x.id for x in node.targets)
