@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import pyinotify # type: ignore
 import importlib
 
+pretty_printer = {}
 context_globals = {}
 context_locals = {}
 definitions = {}
@@ -42,11 +43,16 @@ def _get_field(name, context):
             return False, None
     return True, c
 
-@dataclass
 class Cell:
-    output_text: StringVar
-    textbox: Text
-    _hash: uuid.UUID = field(default_factory=uuid.uuid1)
+    def __init__(self, frame):
+        self.textbox = Text(frame, height=10)
+        self.textbox.pack()
+        self.textbox.bind('<Control-Return>', lambda _event: self.run())
+
+        self.output_frame = Frame(frame)
+        self.output_frame.pack()
+
+        self._hash = uuid.uuid1()
 
     def __hash__(self):
         return hash(self._hash)
@@ -98,7 +104,16 @@ class Cell:
                 watch_manager.add_watch(os.path.dirname(path), pyinotify.IN_MODIFY)
 
         result = exec_block(tree)
-        self.output_text.set(repr(result))
+
+        # clear out the previous results
+        for child in self.output_frame.winfo_children():
+            child.destroy()
+
+        if type(result) in pretty_printer:
+            print("Pretty printer available for ", type(result))
+            pretty_printer[type(result)](self, result)
+        else:
+            Label(self.output_frame, text=repr(result)).pack()
 
         for ref in v.assigns + list(v.import_statements.values()):
             for cell in references.get(ref, set()):
@@ -148,8 +163,8 @@ def generate_cell(frame):
     textarea = Text(frame, height=10)
     textarea.pack()
     textvar = StringVar()
-    cell = Cell(textvar, textarea)
     l = Label(frame, textvariable=textvar)
+    cell = Cell(textvar, textarea)
 
     textarea.bind('<Control-Return>', lambda _event: cell.run())
     l.pack()
@@ -159,15 +174,33 @@ def generate_cell(frame):
 frame = Frame(canvas)
 canvas.create_window((0, 0), window=frame, anchor='nw')
 
-generate_cell(frame)
-generate_cell(frame)
+Cell(frame)
+Cell(frame)
 
 def add_cell():
-    generate_cell(frame)
+    Cell(frame)
     update_scroll_region()
 
 add_cell_button = Button(root, text='Add cell', command = add_cell)
 add_cell_button.pack()
+
+## PRETTY PRINTER
+
+try:
+    import numpy
+except ModuleNotFoundError:
+    pass
+else:
+    def numpy_printer(cell: Cell, arr: numpy.array):
+        if len(arr.shape) == 2:
+            for row in range(arr.shape[0]):
+                for col in range(arr.shape[1]):
+                    Label(cell.output_frame, text=str(arr[row, col]), borderwidth=1).grid(row=row, column=col)
+        else:
+            # hacky fallback
+            Label(cell.output_frame, text=repr(arr)).pack()
+
+    pretty_printer[numpy.ndarray] = numpy_printer
 
 root.mainloop()
 
