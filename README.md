@@ -20,3 +20,4 @@ interactive, intelligent, visual, and convenient.
 * Edward Tufte's work on data visualization
 * Bret Victor
 * [Where's my simulator?](https://shalabh.com/programmable-systems/wheres-my-simulator.html)
+* Chrome Devtools
