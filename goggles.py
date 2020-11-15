@@ -73,6 +73,17 @@ class Cell:
                 raise Exception(f'{a} is already defined')
             definitions[a] = self
 
+        # TODO: This is disgustingly inefficient. Build a
+        # better data structure so this mess isn't needed.
+        to_delete = []
+        for var, cell in definitions.items():
+            if cell == self and var not in v.assigns:
+                print('unset variable', var)
+                to_delete.append(var)
+        for var in to_delete:
+            del definitions[var]
+            del context_locals[var]
+
         for r in v.references:
             if r not in references:
                 references[r] = set()
@@ -103,22 +114,28 @@ class Cell:
                 #       so if any files change, the entire thing gets reimported
                 watch_manager.add_watch(os.path.dirname(path), pyinotify.IN_MODIFY)
 
-        result = exec_block(tree)
-
-        # clear out the previous results
+        # clear out the previous results from the output frame
         for child in self.output_frame.winfo_children():
             child.destroy()
 
-        if type(result) in pretty_printer:
-            print("Pretty printer available for ", type(result))
-            pretty_printer[type(result)](self, result)
+        try:
+            result = exec_block(tree)
+        except Exception as e:
+            Label(self.output_frame, text=repr(e), bg='red').pack()
         else:
-            Label(self.output_frame, text=repr(result)).pack()
+            if type(result) in pretty_printer:
+                print("Pretty printer available for ", type(result))
+                pretty_printer[type(result)](self, result)
+            else:
+                Label(self.output_frame, text=repr(result)).pack()
 
-        for ref in v.assigns + list(v.import_statements.values()):
-            for cell in references.get(ref, set()):
-                if cell != self: # TODO: detect and prevent cycles
-                    cell.run()
+            for ref in v.assigns + list(v.import_statements.values()) + to_delete:
+                for cell in references.get(ref, set()):
+                    if cell != self: # TODO: detect and prevent cycles
+                        cell.run()
+
+        for var in to_delete:
+            del references[var]
 
 def exec_block(block):
     # assumes last node is an expression
