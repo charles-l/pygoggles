@@ -16,7 +16,7 @@ IS THIS OVERLY COMPLICATED? LETS IMPLEMENT IT AND FIND OUT
 import contextlib, glfw, skia
 import traceback
 import random
-from peewee import *
+import sqlite_utils
 from OpenGL import GL
 
 WIDTH, HEIGHT = 640, 480
@@ -47,45 +47,33 @@ def skia_surface(window):
     yield surface
     context.abandonContext()
 
-db = SqliteDatabase(':memory:')
+db = sqlite_utils.Database(':memory:')
+db['gui_status'].insert_all([{'name': 'scroll_x', 'value': 0},
+                             {'name': 'scroll_y', 'value': 0}], pk='name')
 
-class GUIStatus(Model):
-    name = CharField()
-    value = IntegerField()
-    class Meta:
-        database = db
-
-class Widget(Model):
-    text = CharField()
-    x = IntegerField()
-    y = IntegerField()
-    width = IntegerField()
-    height = IntegerField()
-    class Meta:
-        database = db
+db['widget'].create({'text': str, 'x': int, 'y': int, 'width': int, 'height': int})
 
 typeface = skia.Typeface('Arial')
 font = skia.Font(typeface, 14, 1, 0)
 font.setEdging(skia.Font.Edging.kAntiAlias)
 
 def add_widget(text):
-    y = (Widget.select(fn.Max(Widget.y)).scalar() or 0) + 30
+    y = (db.execute('select max(y) from widget').fetchone()[0] or 0) + 30
     x = 10
-    Widget.create(text=text, x=x, y=y, width=100, height=20)
+    db['widget'].insert({'text': text, 'x': x, 'y': y, 'width': 100, 'height': 20})
 
 with glfw_window() as window:
     GL.glClear(GL.GL_COLOR_BUFFER_BIT)
 
     def scroll_callback(_win, dx, dy):
-        scroll_x = GUIStatus.get(name='scroll_x')
-        scroll_x.value += dx
-        scroll_x.save()
+        new_scroll_x = db['gui_status'].get('scroll_x')['value'] + dx
+        db['gui_status'].update('scroll_x', {'value': new_scroll_x})
 
-        scroll_y = GUIStatus.get(name='scroll_y')
-        scroll_y.value += dy
-        scroll_y.save()
+        new_scroll_y = db['gui_status'].get('scroll_y')['value'] + dy
+        db['gui_status'].update('scroll_y', {'value': new_scroll_y})
 
         render_gui()
+
     glfw.set_scroll_callback(window, scroll_callback)
 
     def render_gui():
@@ -93,39 +81,33 @@ with glfw_window() as window:
             with skia_surface(window) as surface:
                 with surface as canvas:
                     canvas.clear(skia.Color(0, 0, 0))
-                    scroll = GUIStatus.get(name='scroll_x').value, GUIStatus.get(name='scroll_y').value * 10
+                    scroll = db['gui_status'].get('scroll_x')['value'], db['gui_status'].get('scroll_y')['value']
                     canvas.translate(*scroll)
-                    for widget in Widget.select():
-                        blob = skia.TextBlob.MakeFromString(widget.text, font)
+                    for widget in db['widget'].rows:
+                        blob = skia.TextBlob.MakeFromString(widget['text'], font)
                         canvas.save()
-                        canvas.drawRect(skia.Rect(widget.x, widget.y, widget.x+widget.width, widget.y+widget.height),
+                        canvas.drawRect(skia.Rect(widget['x'], widget['y'], widget['x']+widget['width'], widget['y']+widget['height']),
                                         skia.Paint(AntiAlias=True, Style=skia.Paint.kFill_Style, Color=skia.ColorBLUE))
-                        canvas.clipRect(skia.Rect(widget.x, widget.y, widget.x+widget.width, widget.y+widget.height))
-                        canvas.drawTextBlob(blob, widget.x, widget.y+widget.height, skia.Paint(AntiAlias=True, Color=skia.Color(255, 255, 255)))
+                        canvas.clipRect(skia.Rect(widget['x'], widget['y'], widget['x']+widget['width'], widget['y']+widget['height']))
+                        canvas.drawTextBlob(blob, widget['x'], widget['y']+widget['height'], skia.Paint(AntiAlias=True, Color=skia.Color(255, 255, 255)))
                         canvas.restore()
                 surface.flushAndSubmit()
                 glfw.swap_buffers(window)
         except Exception as e:
             traceback.print_exc()
 
-
-    db.connect()
-    db.create_tables([Widget, GUIStatus])
-    GUIStatus.create(name='scroll_x', value=0).save()
-    GUIStatus.create(name='scroll_y', value=0).save()
-
-    db.connection().create_function('render_gui', 0, render_gui)
-    db.connection().execute('''
+    db.register_function(render_gui)
+    db.execute('''
     create trigger re_render_gui_insert after insert on widget begin
         select render_gui();
     end
     ''')
-    db.connection().execute('''
+    db.execute('''
     create trigger re_render_gui_delete after delete on widget begin
         select render_gui();
     end
     ''')
-    db.connection().execute('''
+    db.execute('''
     create trigger re_render_gui_update after update on widget begin
         select render_gui();
     end
