@@ -20,7 +20,6 @@ class OnWriteHandler(pyinotify.ProcessEvent):
                 c.run(rerun_imports=True)
 
 watch_manager = pyinotify.WatchManager()
-# TODO: use pyinotify.Notifier instead
 import_file_notifier = pyinotify.ThreadedNotifier(watch_manager, OnWriteHandler())
 import_file_notifier.start()
 
@@ -205,6 +204,7 @@ else:
     pretty_printer[numpy.ndarray] = numpy_printer
 
 root.mainloop()
+import_file_notifier.stop()
 
 # TODO: extend so that graphical results can be printed
 # TODO: extend so you can inject it into another python script
