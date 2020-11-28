@@ -1,4 +1,5 @@
 from tkinter import *
+import tkinter.ttk as ttk
 import sys
 import ast
 import uuid
@@ -128,6 +129,20 @@ class Cell:
             else:
                 out_text = selectable_text(self.output_frame, repr(result))
                 out_text.pack()
+
+                if hasattr(result, '__dict__'):
+                    tree = ttk.Treeview(self.output_frame)
+                    tree['columns'] = ('value',)
+                    tree.column('#0', width=90, anchor='c')
+                    tree.column('value', width=90, anchor='se')
+
+                    tree.heading('#0', text='field')
+                    tree.heading('value', text='value')
+
+                    obj = tree.insert('', 1, text='result', values=('',))
+                    for k, v in result.__dict__.items():
+                        tree.insert(obj, 'end', text=k, values=(repr(v),))
+                    tree.pack(fill=X)
 
 def exec_block(block, context_globals, context_locals):
     # assumes last node is an expression
