@@ -1,6 +1,6 @@
 # goggles
 
-*Because our current debug/test/profile tooling is stuck in the 80s*
+*Because our current debug/test/profiling tooling is stuck in the 80s*
 
 An experiment in building a tool to make working with Python code more
 interactive, intelligent, visual, and convenient.
@@ -21,3 +21,4 @@ interactive, intelligent, visual, and convenient.
 * Bret Victor
 * [Where's my simulator?](https://shalabh.com/programmable-systems/wheres-my-simulator.html)
 * Chrome Devtools
+* [Subtext](http://www.subtext-lang.org/)
