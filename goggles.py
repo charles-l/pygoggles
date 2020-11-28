@@ -3,7 +3,6 @@ import sys
 import ast
 import uuid
 import os
-from dataclasses import dataclass, field
 import pyinotify # type: ignore
 import importlib
 
@@ -47,7 +46,11 @@ class Cell:
     def __init__(self, frame):
         self.textbox = Text(frame, height=10)
         self.textbox.pack()
-        self.textbox.bind('<Control-Return>', lambda _event: self.run())
+
+        def f(event):
+            self.run()
+            return "break"
+        self.textbox.bind('<Control-Return>', f)
 
         self.output_frame = Frame(frame)
         self.output_frame.pack()
