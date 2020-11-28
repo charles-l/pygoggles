@@ -40,6 +40,19 @@ def _get_field(name, context):
             return False, None
     return True, c
 
+def selectable_text(frame, text, **kwargs):
+    r = Text(frame, height=1, borderwidth=0, **kwargs)
+
+    def focus_text(event):
+        r.config(state='normal')
+        r.focus()
+        r.config(state='disabled')
+
+    r.insert(1.0, text)
+    r.configure(state='disabled')
+    r.bind('<Button-1>', focus_text)
+    return r
+
 class Cell:
     def __init__(self, frame):
         self.textbox = Text(frame, height=10)
@@ -104,13 +117,14 @@ class Cell:
                                 {**{name: mod for name, mod in imported_modules.items() if mod in v.import_statements.values()},
                                  **context_locals})
         except Exception as e:
-            Label(self.output_frame, text=repr(e), bg='red').pack()
+            selectable_text(self.output_frame, text=repr(e), bg='red').pack()
         else:
             if type(result) in pretty_printer:
                 print("Pretty printer available for ", type(result))
                 pretty_printer[type(result)](self, result)
             else:
-                Label(self.output_frame, text=repr(result)).pack()
+                out_text = selectable_text(self.output_frame, repr(result))
+                out_text.pack()
 
 def exec_block(block, context_globals, context_locals):
     # assumes last node is an expression
