@@ -7,17 +7,15 @@ import pyinotify # type: ignore
 import importlib
 
 pretty_printer = {}
-context_globals = {}
-context_locals = {}
-definitions = {}
-references = {}
-imports = {}
+cell_imports = {}
+imported_modules = {}
 
 class OnWriteHandler(pyinotify.ProcessEvent):
     def process_IN_MODIFY(self, event):
         print('==> Modification detected', event.pathname)
-        if event.pathname in imports:
-            for c in imports[event.pathname]:
+        print(cell_imports)
+        if event.pathname in cell_imports:
+            for c in cell_imports[event.pathname]:
                 print('rerunning', c.textbox.get('0.0', 'end'))
                 c.run(rerun_imports=True)
 
@@ -66,53 +64,32 @@ class Cell:
 
     def run(self, rerun_imports=False):
         program_text = self.textbox.get('0.0', 'end')
+        context_globals = {}
+        context_locals = {}
 
         tree = ast.parse(program_text, mode='exec')
-        v = FindReferencesAndAssignments()
+        v = FindImports()
         v.visit(tree)
 
-        for a in v.assigns:
-            if a in definitions and definitions[a] != self:
-                raise Exception(f'{a} is already defined')
-            definitions[a] = self
-
-        # TODO: This is disgustingly inefficient. Build a
-        # better data structure so this mess isn't needed.
-        to_delete = []
-        for var, cell in definitions.items():
-            if cell == self and var not in v.assigns:
-                print('unset variable', var)
-                to_delete.append(var)
-        for var in to_delete:
-            del definitions[var]
-            del context_locals[var]
-
-        for r in v.references:
-            if r not in references:
-                references[r] = set()
-            references[r].add(self)
-
         for module_name, module_alias in v.import_statements.items():
-            was_imported, module = _get_field(module_alias, context_locals)
+            was_imported, module = _get_field(module_alias, imported_modules)
 
             if was_imported:
                 path = module.__file__
                 if rerun_imports:
                     print('reimporting ', module)
                     importlib.reload(module)
-                imports[path].add(self)
+                cell_imports[path].add(self)
             else:
-                if module_name != module_alias:
-                    exec(f'import {module_name} as {module_alias}', context_globals, context_locals)
-                else:
-                    exec(f'import {module_name}', context_globals, context_locals)
+                print('importing ', module_name)
+                # FIXME won't work with e.g. `import module.submodule` because of the dot
+                imported_modules[module_alias] = importlib.import_module(module_name)
 
-                was_imported, module = _get_field(module_alias, context_locals)
-                assert was_imported, "Uh... it should have been imported with the previous exec??"
+                was_imported, module = _get_field(module_alias, imported_modules)
 
                 path = module.__file__
 
-                imports[path] = set()
+                cell_imports[path] = set([self])
                 # TODO: recursively parse python module dependencies
                 #       so if any files change, the entire thing gets reimported
                 watch_manager.add_watch(os.path.dirname(path), pyinotify.IN_MODIFY)
@@ -122,7 +99,10 @@ class Cell:
             child.destroy()
 
         try:
-            result = exec_block(tree)
+            result = exec_block(tree, context_globals,
+                                # only include the modules that were imported in this cell
+                                {**{name: mod for name, mod in imported_modules.items() if mod in v.import_statements.values()},
+                                 **context_locals})
         except Exception as e:
             Label(self.output_frame, text=repr(e), bg='red').pack()
         else:
@@ -132,15 +112,7 @@ class Cell:
             else:
                 Label(self.output_frame, text=repr(result)).pack()
 
-            for ref in v.assigns + list(v.import_statements.values()) + to_delete:
-                for cell in references.get(ref, set()):
-                    if cell != self: # TODO: detect and prevent cycles
-                        cell.run()
-
-        for var in to_delete:
-            del references[var]
-
-def exec_block(block):
+def exec_block(block, context_globals, context_locals):
     # assumes last node is an expression
     if isinstance(block.body[-1], ast.Expr):
         last = ast.Expression(block.body.pop().value)
@@ -152,28 +124,14 @@ def exec_block(block):
         return None
 
 
-class FindReferencesAndAssignments(ast.NodeVisitor):
+class FindImports(ast.NodeVisitor):
     def __init__(self):
-        self.assigns = []
-        self.references = []
         self.import_statements = {}
 
     def visit_Import(self, node):
         for x in node.names:
             # use an import alias if there is one
             self.import_statements[x.name] = x.asname if x.asname else x.name
-
-    def visit_Assign(self, node):
-        print(node.targets)
-        for x in node.targets:
-            if type(x) == ast.Subscript:
-                # get the target of the subscript operation
-                self.references.append(x.value.id)
-            else:
-                self.assigns.append(x.id)
-
-    def visit_Name(self, node):
-        self.references.append(node.id)
 
 root = Tk()
 canvas = Canvas(root, width=650, height=600)
