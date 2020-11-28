@@ -95,7 +95,11 @@ class Cell:
                 cell_imports[path].add(self)
             else:
                 print('importing ', module_name)
+
                 # FIXME won't work with e.g. `import module.submodule` because of the dot
+                if '.' in module_name:
+                    raise Exception("can't import submodules at the moment -- import the module with an alias")
+
                 imported_modules[module_alias] = importlib.import_module(module_name)
 
                 was_imported, module = _get_field(module_alias, imported_modules)
