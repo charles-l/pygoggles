@@ -164,7 +164,13 @@ class FindReferencesAndAssignments(ast.NodeVisitor):
             self.import_statements[x.name] = x.asname if x.asname else x.name
 
     def visit_Assign(self, node):
-        self.assigns.extend(x.id for x in node.targets)
+        print(node.targets)
+        for x in node.targets:
+            if type(x) == ast.Subscript:
+                # get the target of the subscript operation
+                self.references.append(x.value.id)
+            else:
+                self.assigns.append(x.id)
 
     def visit_Name(self, node):
         self.references.append(node.id)
@@ -224,7 +230,6 @@ else:
 
 root.mainloop()
 
-# TODO: throw error/cleanup when a variable gets undefined
 # TODO: extend so that graphical results can be printed
 # TODO: extend so you can inject it into another python script
 #       (maybe even attach to a process?) so that you can have cells
