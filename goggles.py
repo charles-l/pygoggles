@@ -53,6 +53,27 @@ def selectable_text(frame, text, **kwargs):
     r.bind('<Button-1>', focus_text)
     return r
 
+def object_treeview(frame, obj, root_name='result'):
+    tree = ttk.Treeview(frame)
+
+    tree['columns'] = ('value',)
+    tree.column('#0', width=90, anchor='c')
+    tree.column('value', width=90, anchor='se')
+
+    tree.heading('#0', text='field')
+    tree.heading('value', text='value')
+
+    root = tree.insert('', 1, text=root_name, values=(repr(obj),))
+
+    def f(node, obj):
+        if hasattr(obj, '__dict__'):
+            for k, v in obj.__dict__.items():
+                new_node = tree.insert(node, 'end', text=k, values=(repr(v),))
+                f(new_node, v)
+
+    f(root, obj)
+    return tree
+
 class Cell:
     def __init__(self, frame):
         self.textbox = Text(frame, height=10)
@@ -130,19 +151,7 @@ class Cell:
                 out_text = selectable_text(self.output_frame, repr(result))
                 out_text.pack()
 
-                if hasattr(result, '__dict__'):
-                    tree = ttk.Treeview(self.output_frame)
-                    tree['columns'] = ('value',)
-                    tree.column('#0', width=90, anchor='c')
-                    tree.column('value', width=90, anchor='se')
-
-                    tree.heading('#0', text='field')
-                    tree.heading('value', text='value')
-
-                    obj = tree.insert('', 1, text='result', values=('',))
-                    for k, v in result.__dict__.items():
-                        tree.insert(obj, 'end', text=k, values=(repr(v),))
-                    tree.pack(fill=X)
+                object_treeview(self.output_frame, result).pack(fill=X)
 
 def exec_block(block, context_globals, context_locals):
     # assumes last node is an expression
