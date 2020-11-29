@@ -65,11 +65,23 @@ def object_treeview(frame, obj, root_name='result'):
 
     root = tree.insert('', 1, text=root_name, values=(repr(obj),))
 
-    def f(node, obj):
-        if hasattr(obj, '__dict__'):
-            for k, v in obj.__dict__.items():
-                new_node = tree.insert(node, 'end', text=k, values=(repr(v),))
-                f(new_node, v)
+    def f(node, obj, visited=set()):
+        if id(obj) in visited:
+            return
+        visited.add(id(obj))
+
+        d = {}
+        if isinstance(obj, dict):
+            d = obj
+        elif isinstance(obj, list):
+            d = dict(zip(range(len(obj)), obj))
+        elif hasattr(obj, '__dict__'):
+            d = obj.__dict__
+
+        for k, v in d.items():
+            print(k, v)
+            new_node = tree.insert(node, 'end', text=str(k), values=(repr(v),))
+            f(new_node, v)
 
     f(root, obj)
     return tree
