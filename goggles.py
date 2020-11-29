@@ -80,42 +80,42 @@ class Cell:
         context_globals = {}
         context_locals = {}
 
-        tree = ast.parse(program_text, mode='exec')
-        v = FindImports()
-        v.visit(tree)
+        try:
+            tree = ast.parse(program_text, mode='exec')
+            v = FindImports()
+            v.visit(tree)
 
-        for module_name, module_alias in v.import_statements.items():
-            was_imported, module = _get_field(module_alias, imported_modules)
-
-            if was_imported:
-                path = module.__file__
-                if rerun_imports:
-                    print('reimporting ', module)
-                    importlib.reload(module)
-                cell_imports[path].add(self)
-            else:
-                print('importing ', module_name)
-
-                # FIXME won't work with e.g. `import module.submodule` because of the dot
-                if '.' in module_name:
-                    raise Exception("can't import submodules at the moment -- import the module with an alias")
-
-                imported_modules[module_alias] = importlib.import_module(module_name)
-
+            for module_name, module_alias in v.import_statements.items():
                 was_imported, module = _get_field(module_alias, imported_modules)
 
-                path = module.__file__
+                if was_imported:
+                    path = module.__file__
+                    if rerun_imports:
+                        print('reimporting ', module)
+                        importlib.reload(module)
+                    cell_imports[path].add(self)
+                else:
+                    print('importing ', module_name)
 
-                cell_imports[path] = set([self])
-                # TODO: recursively parse python module dependencies
-                #       so if any files change, the entire thing gets reimported
-                watch_manager.add_watch(os.path.dirname(path), pyinotify.IN_MODIFY)
+                    # FIXME won't work with e.g. `import module.submodule` because of the dot
+                    if '.' in module_name:
+                        raise Exception("can't import submodules at the moment -- import the module with an alias")
 
-        # clear out the previous results from the output frame
-        for child in self.output_frame.winfo_children():
-            child.destroy()
+                    imported_modules[module_alias] = importlib.import_module(module_name)
 
-        try:
+                    was_imported, module = _get_field(module_alias, imported_modules)
+
+                    path = module.__file__
+
+                    cell_imports[path] = set([self])
+                    # TODO: recursively parse python module dependencies
+                    #       so if any files change, the entire thing gets reimported
+                    watch_manager.add_watch(os.path.dirname(path), pyinotify.IN_MODIFY)
+
+            # clear out the previous results from the output frame
+            for child in self.output_frame.winfo_children():
+                child.destroy()
+
             result = exec_block(tree, context_globals,
                                 # only include the modules that were imported in this cell
                                 {**{name: mod for name, mod in imported_modules.items() if mod in v.import_statements.values()},
