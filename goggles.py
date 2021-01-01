@@ -4,9 +4,11 @@ import sys
 import ast
 import uuid
 import os
+import io
 import pyinotify # type: ignore
 import textwrap
 import importlib
+import traceback
 
 pretty_printer = {}
 cell_imports = {}
@@ -42,7 +44,7 @@ def _get_field(name, context):
     return True, c
 
 def selectable_text(frame, text, **kwargs):
-    r = Text(frame, height=1, borderwidth=0, **kwargs)
+    r = Text(frame, borderwidth=0, **kwargs)
 
     def focus_text(event):
         r.config(state='normal')
@@ -123,11 +125,14 @@ class Cell:
                 was_imported, module = _get_field(module_alias, imported_modules)
 
                 if was_imported:
-                    path = module.__file__
-                    if rerun_imports:
-                        print('reimporting ', module)
-                        importlib.reload(module)
-                    cell_imports[path].add(self)
+                    if hasattr(module, '__file__'):
+                        path = module.__file__
+                        if rerun_imports:
+                            print('reimporting ', module)
+                            importlib.reload(module)
+                        cell_imports[path].add(self)
+                    else:
+                        print(f'warning: skipping watch for {module_alias}. It has no file.')
                 else:
                     print('importing ', module_name)
 
@@ -139,12 +144,15 @@ class Cell:
 
                     was_imported, module = _get_field(module_alias, imported_modules)
 
-                    path = module.__file__
+                    if hasattr(module, '__file__'):
+                        path = module.__file__
 
-                    cell_imports[path] = set([self])
-                    # TODO: recursively parse python module dependencies
-                    #       so if any files change, the entire thing gets reimported
-                    watch_manager.add_watch(os.path.dirname(path), pyinotify.IN_MODIFY)
+                        cell_imports[path] = set([self])
+                        # TODO: recursively parse python module dependencies
+                        #       so if any files change, the entire thing gets reimported
+                        watch_manager.add_watch(os.path.dirname(path), pyinotify.IN_MODIFY)
+                    else:
+                        print(f'warning: skipping watch for {module_alias}. It has no file.')
 
             # clear out the previous results from the output frame
             for child in self.output_frame.winfo_children():
@@ -155,13 +163,16 @@ class Cell:
                                 {**{name: mod for name, mod in imported_modules.items() if mod in v.import_statements.values()},
                                  **context_locals})
         except Exception as e:
-            selectable_text(self.output_frame, text=repr(e), bg='red').pack()
+            # clear out the previous results from the output frame
+            for child in self.output_frame.winfo_children():
+                child.destroy()
+            selectable_text(self.output_frame, text=traceback.format_exc(), bg='red', height=10).pack()
         else:
             if type(result) in pretty_printer:
                 print("Pretty printer available for ", type(result))
                 pretty_printer[type(result)](self, result)
             else:
-                out_text = selectable_text(self.output_frame, repr(result))
+                out_text = selectable_text(self.output_frame, repr(result), height=10)
                 out_text.pack()
 
                 object_treeview(self.output_frame, result).pack(fill=X)
@@ -264,9 +275,16 @@ else:
 
     pretty_printer[numpy.ndarray] = numpy_printer
 
+sys.path.append(os.getcwd())
+
 root.mainloop()
 import_file_notifier.stop()
 
+# TODO: support reloading loaded objects with from mod import *
+# TODO: capture stdout
+# TODO: try to make it as trivial to add new cases as adding a line in a REPL.
+#       basically, make it a REPL that reruns every line in the history on
+#       dependency changes.
 # TODO: extend so that graphical results can be printed
 # TODO: extend so you can inject it into another python script
 #       (maybe even attach to a process?) so that you can have cells
