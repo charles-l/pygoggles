@@ -84,20 +84,6 @@ def skia_surface(window):
     context.abandonContext()
 
 @dataclass
-class Command:
-    _text: str = ''
-    _blob: skia.TextBlob = skia.TextBlob.MakeFromString('', font)
-
-    @property
-    def text(self):
-        return self._text
-
-    @text.setter
-    def text(self, text):
-        self._text = text
-        self._blob = skia.TextBlob.MakeFromString(self._text, font)
-
-@dataclass
 class Cursor:
     buf: Buffer
     _pos: int = 0
@@ -127,12 +113,13 @@ class Cursor:
 
     @line.setter
     def line(self, n):
+        # FIXME: can't go backwards over blank lines.
         c = self.column
         if n < 0:
             n = 0
         self._pos = 0
 
-        for i, l in enumerate(buf.doc.split('\n')):
+        for i, l in enumerate(self.buf.doc.split('\n')):
             if i == n:
                 self.column = c
                 return
@@ -144,7 +131,6 @@ class Cursor:
     def backspace(self):
         self.buf.doc = self.buf.doc[:self._pos] + self.buf.doc[self._pos+1:]
 
-command = Command()
 cursor = Cursor(buf)
 
 event_pipe = []
@@ -185,7 +171,9 @@ with glfw_window() as window:
                 event_type, *args = event_pipe.pop(0)
                 if event_type == 'key_press':
                     if args[0] == 'enter':
-                        command.text = ''
+                        cursor.insert('\n')
+                        cursor.line += 1
+                        cursor.column = 0
                     elif args[0] == 'j':
                         cursor.line += 1
                     elif args[0] == 'k':
@@ -201,9 +189,12 @@ with glfw_window() as window:
                         cursor.insert(args[0])
                         cursor.column += 1
 
-                scroll_to_line(cursor.line)
+                #scroll_to_line(cursor.line)
 
             with surface as canvas:
+                # ensure cursor is visible
+                target_scroll[1] = clamp(cursor.line * -line_height, (cursor.line + 2) * -line_height + HEIGHT, target_scroll[1])
+
                 M = canvas.getTotalMatrix()
                 if abs(target_scroll[1] - M.getTranslateY()) > 2:
                     canvas.translate(0, (target_scroll[1] - M.getTranslateY()) * 0.2)
@@ -212,8 +203,7 @@ with glfw_window() as window:
 
                 canvas.clear(skia.Color(255, 255, 255))
                 canvas.drawTextBlob(buf.blob, 0, line_height, paint)
-                canvas.drawTextBlob(command._blob, 200, 200, paint)
-                canvas.drawRect(skia.Rect.MakeXYWH(cursor.column * col_width, cursor.line * line_height, 4, line_height), paint)
+                canvas.drawRect(skia.Rect.MakeXYWH(cursor.column * col_width, cursor.line * line_height + 4, 2, line_height), paint)
             surface.flushAndSubmit()
             glfw.swap_buffers(window)
 
