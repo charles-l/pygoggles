@@ -1,3 +1,4 @@
+# based on https://github.com/sparkeditor/piece-table/blob/master/index.js
 from typing import *
 from dataclasses import dataclass, field
 
@@ -6,6 +7,9 @@ class Piece:
     def __init__(self, ty, offset, length):
         self.type, self.offset, self.length = ty, offset, length
 
+    def __repr__(self):
+        return f'Piece<{self.type=} {self.offset=} {self.length=}>'
+
 class PieceTable:
     def __init__(self, original):
         self.original = original
@@ -13,14 +17,14 @@ class PieceTable:
         self._table = [Piece('original', 0, len(original))]
 
     def _piece_index(self, buffer_offset) -> int:
-        '''returns piece index and buffer offset'''
+        '''returns piece index and offset into the pieces buffer'''
         if buffer_offset < 0:
             raise ValueError('out of bounds')
 
         remaining_offset = buffer_offset
         for i, piece in enumerate(self._table):
             if remaining_offset <= piece.length:
-                return i
+                return i, piece.offset + remaining_offset
             remaining_offset -= piece.length
 
         raise ValueError('out of bounds')
@@ -32,17 +36,17 @@ class PieceTable:
         add_offset = len(self._add)
         self._add += s
 
-        i = self._piece_index(offset)
+        i, buf_offset = self._piece_index(offset)
         piece = self._table[i]
 
-        if piece.type == 'add' and offset == piece.offset + piece.length and piece.offset + piece.length == add_offset:
+        if piece.type == 'add' and buf_offset == piece.offset + piece.length and piece.offset + piece.length == add_offset:
             piece.length += len(s)
             return
 
         new_pieces = [x for x in (
-            Piece(piece.type, piece.offset, offset - piece.offset),
+            Piece(piece.type, piece.offset, buf_offset - piece.offset),
             Piece('add', add_offset, len(s)),
-            Piece(piece.type, offset, piece.length - (offset - piece.offset))
+            Piece(piece.type, buf_offset, piece.length - (buf_offset - piece.offset))
             ) if x.length > 0]
 
         self._table = self._table[:i] + new_pieces + self._table[i+1:]
@@ -54,26 +58,30 @@ class PieceTable:
         if offset < 0:
             raise ValueError('out of bounds')
 
-        i = _piece_index(offset)
-        j = _piece_index(offset + length)
+        i, i_buf_offset = self._piece_index(offset)
+        j, j_buf_offset = self._piece_index(offset + length)
 
         if i == j:
             piece = self._table[i]
-            if offset == piece.offset:
+            if i_buf_offset == piece.offset:
                 piece.offset += length
                 piece.length -= length
                 return
 
-            if offset + length == piece.offset + piece.length:
+            if j_buf_offset == piece.offset + piece.length:
                 piece.length -= length
                 return
 
         delete_pieces = [x for x in (
-            Piece(self._table[i].type, self._table[i].offset, offset - self._table[i].offset),
-            Piece(self._table[j].type, offset + length, self._table[j].length - (offset + length - self._table[j].offset))
+            Piece(self._table[i].type, self._table[i].offset, i_buf_offset - self._table[i].offset),
+            Piece(self._table[j].type, j_buf_offset, self._table[j].length - (j_buf_offset - self._table[j].offset))
             ) if x.length > 0]
 
         self._table = self._table[:i] + delete_pieces + self._table[j+1:]
+
+        # if the table is empty, put a 0-length piece in there so we have at least one piece.
+        if not self._table:
+            self._table = [Piece('original', 0, 0)]
 
     def as_str(self):
         s = ""
