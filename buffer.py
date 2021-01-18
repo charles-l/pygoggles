@@ -34,7 +34,7 @@ class Buffer:
             return self._linestarts[n+1] - self._linestarts[n]
         else:
             # FIXME: once substr is added, get the length of the last line directly
-            return len(self.as_str()) - self._linestarts[n]
+            return len(self.as_str()) - self._linestarts[n] + 1
 
     def insert(self, val, pos):
         self._buf.insert(val, pos)
