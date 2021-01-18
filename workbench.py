@@ -91,7 +91,7 @@ class Cursor:
     def column(self, v):
         line_start = self._buf.pos_for_line(self.line)
         line_len = self._buf.line_length(self.line) - 1
-        self._pos = clamp(line_start, line_start + line_len+1, line_start + v)
+        self._pos = clamp(line_start, line_start + line_len, line_start + v)
 
     @property
     def line(self):
@@ -123,8 +123,16 @@ with glfw_window() as window:
     def key_callback(_win, k, scancode, action, mods):
         if k == glfw.KEY_BACKSPACE and action == glfw.PRESS:
             event_pipe.append(('key_press', 'backspace'))
-        if k == glfw.KEY_ENTER and action == glfw.PRESS:
+        elif k == glfw.KEY_ENTER and action == glfw.PRESS:
             event_pipe.append(('key_press', 'enter'))
+        elif k == glfw.KEY_UP and action == glfw.PRESS:
+            event_pipe.append(('key_press', 'up'))
+        elif k == glfw.KEY_DOWN and action == glfw.PRESS:
+            event_pipe.append(('key_press', 'down'))
+        elif k == glfw.KEY_LEFT and action == glfw.PRESS:
+            event_pipe.append(('key_press', 'left'))
+        elif k == glfw.KEY_RIGHT and action == glfw.PRESS:
+            event_pipe.append(('key_press', 'right'))
 
     def scroll_callback(_win, dx, dy):
         target_scroll[0] += dx * line_height * 2
@@ -152,21 +160,21 @@ with glfw_window() as window:
                     if args[0] == 'enter':
                         cells[cur_cell].input.insert('\n', cursor._pos)
                         cursor._pos += 1
-                    elif args[0] == 'j':
+                    elif args[0] == 'down':
                         cursor.line += 1
-                    elif args[0] == 'k':
+                    elif args[0] == 'up':
                         cursor.line -= 1
-                    elif args[0] == 'l':
+                    elif args[0] == 'right':
                         cursor.column += 1
-                    elif args[0] == 'h':
+                    elif args[0] == 'left':
                         cursor.column -= 1
                     elif args[0] == 'backspace':
-                        cells[cur_cell].input.delete(cursor._pos-1, 1)
-                        cursor._pos -= 1
+                        if cursor._pos - 1 >= 0:
+                            cells[cur_cell].input.delete(cursor._pos-1, 1)
+                            cursor._pos -= 1
                     else:
                         cells[cur_cell].input.insert(args[0], cursor._pos)
                         cursor._pos += 1
-                    print(f'{cursor._pos=} {cursor.line=} {cursor.column=}')
 
             with surface as canvas:
                 # ensure cursor is visible
