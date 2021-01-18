@@ -1,13 +1,17 @@
 import contextlib
-import glfw # type: ignore
-import skia # type: ignore
+import glfw  # type: ignore
+import skia  # type: ignore
 import traceback
 import random
 import math
+import ast
+import importlib
 from dataclasses import dataclass
-from OpenGL import GL # type: ignore
-from typing import *
-from functools import lru_cache
+from OpenGL import GL  # type: ignore
+from typing import List
+from functools import lru_cache, wraps
+import numpy as np  # type: ignore
+import matplotlib  # type: ignore
 from buffer import Buffer
 
 font = skia.Font(skia.Typeface('Liberation Mono'), 14)
@@ -47,7 +51,7 @@ def scroll_to_line(i):
 input_paint = skia.Paint(AntiAlias=True, Color=skia.ColorBLACK)
 output_paint = skia.Paint(AntiAlias=True, Color=skia.ColorGRAY)
 
-WIDTH, HEIGHT = 640, 480
+WIDTH, HEIGHT = 800, 600
 
 
 @contextlib.contextmanager
@@ -105,8 +109,25 @@ class Cursor:
             self.column = c
 
 
+def exec_block(block, context_globals=None):
+    if context_globals is None:
+        context_globals = {}
+
+    if isinstance(block.body[-1], ast.Expr):
+        last = ast.Expression(block.body.pop().value)
+
+        exec(compile(block, '<string>', mode='exec'),
+             context_globals)
+        return eval(compile(last, '<string>', mode='eval'),
+                    context_globals)
+    else:
+        exec(compile(block, '<string>', mode='exec'),
+             context_globals)
+        return None
+
+
 cells: List[Cell] = []
-cells.append(Cell(Buffer('some\ninput\nhere\n'), 'some output'))
+cells.append(Cell(Buffer(''), 'some output'))
 cells.append(Cell(Buffer('some\nmore\ninput\nhere'), 'some output'))
 
 cur_cell = 0
@@ -128,7 +149,7 @@ with glfw_window() as window:
                    glfw.KEY_LEFT: 'left',
                    glfw.KEY_RIGHT: 'right'}
 
-        if k in key_map and action == glfw.PRESS:
+        if k in key_map and action in (glfw.PRESS, glfw.REPEAT):
             key = key_map[k]
         else:  # not a key we handle in the key callback
             return
@@ -146,6 +167,21 @@ with glfw_window() as window:
     glfw.set_scroll_callback(window, scroll_callback)
     glfw.set_char_callback(window, char_callback)
     glfw.set_key_callback(window, key_callback)
+
+    globs = {}
+    globs['plt'] = importlib.import_module(
+        'matplotlib.pyplot')
+
+    # wrap plt.plot
+    called_plot = [False]
+
+    _orig_plot = globs['plt'].plot
+    @wraps(_orig_plot)
+    def wrapped_plot(*args, **kwargs):
+        called_plot[0] = True
+        return _orig_plot(*args, **kwargs)
+
+    im = None
 
     last_frame = 0
     with skia_surface(window) as surface:
@@ -182,7 +218,27 @@ with glfw_window() as window:
                 elif event_type == 'key_combo':
                     mod, key = args
                     if mod == 'ctrl' and key == 'enter':
-                        cells[cur_cell].output = str(eval(cells[cur_cell].input.as_str()))
+                        tree = ast.parse(cells[cur_cell].input.as_str(),
+                                         mode='exec')
+                        try:
+
+                            globs['plt'].plot = wrapped_plot
+
+                            globs['np'] = importlib.import_module('numpy')
+                            output = exec_block(tree, globs)
+                            cells[cur_cell].output = str(output)
+                            if called_plot[0]:
+                                output = globs['plt'].gcf()
+                                output.canvas.draw()
+                                data = np.fromstring(
+                                    output.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+                                data = data.reshape(
+                                    output.canvas.get_width_height()[::-1] + (3,))
+                                data = np.dstack(
+                                    (data, np.ones((data.shape[0], data.shape[1]), dtype=np.uint8) * 255))
+                                im = skia.Image.fromarray(data)
+                        except:
+                            cells[cur_cell].output = traceback.format_exc()
 
             with surface as canvas:
                 # ensure cursor is visible
@@ -210,5 +266,7 @@ with glfw_window() as window:
                 # draw cursor
                 canvas.drawRect(skia.Rect.MakeXYWH(
                     cursor.column * col_width, cursor.line * line_height + 4, 2, line_height), input_paint)
+                if im is not None:
+                    canvas.drawImage(im, 200, 0, None)
             surface.flushAndSubmit()
             glfw.swap_buffers(window)
