@@ -121,18 +121,22 @@ with glfw_window() as window:
         event_pipe.append(('key_press', chr(c)))
 
     def key_callback(_win, k, scancode, action, mods):
-        if k == glfw.KEY_BACKSPACE and action == glfw.PRESS:
-            event_pipe.append(('key_press', 'backspace'))
-        elif k == glfw.KEY_ENTER and action == glfw.PRESS:
-            event_pipe.append(('key_press', 'enter'))
-        elif k == glfw.KEY_UP and action == glfw.PRESS:
-            event_pipe.append(('key_press', 'up'))
-        elif k == glfw.KEY_DOWN and action == glfw.PRESS:
-            event_pipe.append(('key_press', 'down'))
-        elif k == glfw.KEY_LEFT and action == glfw.PRESS:
-            event_pipe.append(('key_press', 'left'))
-        elif k == glfw.KEY_RIGHT and action == glfw.PRESS:
-            event_pipe.append(('key_press', 'right'))
+        key_map = {glfw.KEY_BACKSPACE: 'backspace',
+                   glfw.KEY_ENTER: 'enter',
+                   glfw.KEY_UP: 'up',
+                   glfw.KEY_DOWN: 'down',
+                   glfw.KEY_LEFT: 'left',
+                   glfw.KEY_RIGHT: 'right'}
+
+        if k in key_map and action == glfw.PRESS:
+            key = key_map[k]
+        else:  # not a key we handle in the key callback
+            return
+
+        if mods & glfw.MOD_CONTROL:
+            event_pipe.append(('key_combo', 'ctrl', key))
+        else:
+            event_pipe.append(('key_press', key))
 
     def scroll_callback(_win, dx, dy):
         target_scroll[0] += dx * line_height * 2
@@ -175,6 +179,10 @@ with glfw_window() as window:
                     else:
                         cells[cur_cell].input.insert(args[0], cursor._pos)
                         cursor._pos += 1
+                elif event_type == 'key_combo':
+                    mod, key = args
+                    if mod == 'ctrl' and key == 'enter':
+                        cells[cur_cell].output = str(eval(cells[cur_cell].input.as_str()))
 
             with surface as canvas:
                 # ensure cursor is visible
