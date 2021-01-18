@@ -1,46 +1,35 @@
-import contextlib, glfw, skia
+import contextlib
+import glfw # type: ignore
+import skia # type: ignore
 import traceback
 import random
 import math
 from dataclasses import dataclass
-from OpenGL import GL
+from OpenGL import GL # type: ignore
+from typing import *
+from functools import lru_cache
+from buffer import Buffer
 
 font = skia.Font(skia.Typeface('Liberation Mono'), 14)
 line_height = font.getSpacing()
 col_width = font.getWidths([ord('x')])[0]
 
+
 def clamp(l, u, v):
     return max(min(v, u), l)
 
+
 @dataclass
-class Buffer:
-    _doc: str = ''
-    blob: skia.TextBlob = None
+class Cell:
+    input: Buffer
+    output: str
 
-    @property
-    def doc(self):
-        return self._doc
-
-    @doc.setter
-    def doc(self, value):
-        self._doc = value
-
-        builder = skia.TextBlobBuilder()
-        for i, line in enumerate(self._doc.split('\n')):
-            builder.allocRun(line, font, 0, line_height * i)
-
-        self.blob = builder.make()
-
-buf = Buffer()
-with open('/var/log/Xorg.0.log') as f:
-    buf.doc = f.read()
-
-cells = []
 
 target_scroll = [0, 0]
 
+
 def scroll(x, y):
-    lines = buf.doc.count('\n')
+    lines = 100  # FIXME
     target_scroll[0] = x
     target_scroll[1] = y
 
@@ -50,12 +39,16 @@ def scroll(x, y):
     if target_scroll[1] - HEIGHT < -(line_height * lines):
         target_scroll[1] = -line_height * lines + HEIGHT
 
+
 def scroll_to_line(i):
     scroll(target_scroll[0], -line_height * i)
 
-paint = skia.Paint(AntiAlias=True, Color=skia.ColorBLACK)
+
+input_paint = skia.Paint(AntiAlias=True, Color=skia.ColorBLACK)
+output_paint = skia.Paint(AntiAlias=True, Color=skia.ColorGRAY)
 
 WIDTH, HEIGHT = 640, 480
+
 
 @contextlib.contextmanager
 def glfw_window():
@@ -66,6 +59,7 @@ def glfw_window():
     glfw.make_context_current(window)
     yield window
     glfw.terminate()
+
 
 @contextlib.contextmanager
 def skia_surface(window):
@@ -83,55 +77,40 @@ def skia_surface(window):
     yield surface
     context.abandonContext()
 
+
 @dataclass
 class Cursor:
-    buf: Buffer
+    _buf: Buffer
     _pos: int = 0
 
     @property
     def column(self):
-        try:
-            last_newline_i = self.buf.doc.rfind('\n', 0, self._pos+1)
-        except ValueError:
-            last_newline_i = 0
-        return self._pos - last_newline_i
+        return self._buf.col(self._pos)
 
     @column.setter
     def column(self, v):
-        self._pos = self.buf.doc.rfind('\n', 0, self._pos+1)
-
-        try:
-            line_end = self.buf.doc.index('\n', self._pos+1)
-        except ValueError:
-            line_end = len(self.buf)
-
-        self._pos += clamp(0, line_end - self._pos-1, v)
+        line_start = self._buf.pos_for_line(self.line)
+        line_len = self._buf.line_length(self.line) - 1
+        self._pos = clamp(line_start, line_start + line_len+1, line_start + v)
 
     @property
     def line(self):
-        return self.buf.doc.count('\n', 0, self._pos+1)
+        return self._buf.line(self._pos)
 
     @line.setter
     def line(self, n):
-        # FIXME: can't go backwards over blank lines.
-        c = self.column
-        if n < 0:
-            n = 0
-        self._pos = 0
+        if 0 <= n < self._buf.nlines():
+            c = self.column
+            self._pos = self._buf.pos_for_line(n)
+            self.column = c
 
-        for i, l in enumerate(self.buf.doc.split('\n')):
-            if i == n:
-                self.column = c
-                return
-            self._pos += len(l) + 1
 
-    def insert(self, s):
-        self.buf.doc = self.buf.doc[:self._pos+1] + s + self.buf.doc[self._pos+1:]
+cells: List[Cell] = []
+cells.append(Cell(Buffer('some\ninput\nhere\n'), 'some output'))
+cells.append(Cell(Buffer('some\nmore\ninput\nhere'), 'some output'))
 
-    def backspace(self):
-        self.buf.doc = self.buf.doc[:self._pos] + self.buf.doc[self._pos+1:]
-
-cursor = Cursor(buf)
+cur_cell = 0
+cursor = Cursor(cells[cur_cell].input)
 
 event_pipe = []
 
@@ -159,7 +138,7 @@ with glfw_window() as window:
     last_frame = 0
     with skia_surface(window) as surface:
         while (glfw.get_key(window, glfw.KEY_ESCAPE) != glfw.PRESS
-            and not glfw.window_should_close(window)):
+               and not glfw.window_should_close(window)):
 
             current_frame = glfw.get_time()
             dt = current_frame - last_frame
@@ -171,9 +150,8 @@ with glfw_window() as window:
                 event_type, *args = event_pipe.pop(0)
                 if event_type == 'key_press':
                     if args[0] == 'enter':
-                        cursor.insert('\n')
-                        cursor.line += 1
-                        cursor.column = 0
+                        cells[cur_cell].input.insert('\n', cursor._pos)
+                        cursor._pos += 1
                     elif args[0] == 'j':
                         cursor.line += 1
                     elif args[0] == 'k':
@@ -183,27 +161,38 @@ with glfw_window() as window:
                     elif args[0] == 'h':
                         cursor.column -= 1
                     elif args[0] == 'backspace':
-                        cursor.backspace()
-                        cursor.column -= 1
+                        cells[cur_cell].input.delete(cursor._pos-1, 1)
+                        cursor._pos -= 1
                     else:
-                        cursor.insert(args[0])
-                        cursor.column += 1
-
-                #scroll_to_line(cursor.line)
+                        cells[cur_cell].input.insert(args[0], cursor._pos)
+                        cursor._pos += 1
+                    print(f'{cursor._pos=} {cursor.line=} {cursor.column=}')
 
             with surface as canvas:
                 # ensure cursor is visible
-                target_scroll[1] = clamp(cursor.line * -line_height, (cursor.line + 2) * -line_height + HEIGHT, target_scroll[1])
+                target_scroll[1] = clamp(
+                    cursor.line * -line_height, (cursor.line + 2) * -line_height + HEIGHT, target_scroll[1])
 
                 M = canvas.getTotalMatrix()
                 if abs(target_scroll[1] - M.getTranslateY()) > 2:
-                    canvas.translate(0, (target_scroll[1] - M.getTranslateY()) * 0.2)
-                elif abs(target_scroll[1] - M.getTranslateY()) > 1:
+                    canvas.translate(
+                        0, (target_scroll[1] - M.getTranslateY()) * 0.2)
+                elif abs(target_scroll[1] - M.getTranslateY()) > 1:  # snap
                     canvas.translate(0, target_scroll[1] - M.getTranslateY())
 
                 canvas.clear(skia.Color(255, 255, 255))
-                canvas.drawTextBlob(buf.blob, 0, line_height, paint)
-                canvas.drawRect(skia.Rect.MakeXYWH(cursor.column * col_width, cursor.line * line_height + 4, 2, line_height), paint)
+                line = 1
+                for c in cells:
+                    for l in c.input.as_str().split('\n'):
+                        canvas.drawString(
+                            l, 0, line_height * line, font, input_paint)
+                        line += 1
+                    for l in c.output.split('\n'):
+                        canvas.drawString(
+                            l, 0, line_height * line, font, output_paint)
+                        line += 1
+                # draw cursor
+                canvas.drawRect(skia.Rect.MakeXYWH(
+                    cursor.column * col_width, cursor.line * line_height + 4, 2, line_height), input_paint)
             surface.flushAndSubmit()
             glfw.swap_buffers(window)
-
