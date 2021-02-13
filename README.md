@@ -22,3 +22,9 @@ interactive, intelligent, visual, and convenient.
 * [Where's my simulator?](https://shalabh.com/programmable-systems/wheres-my-simulator.html)
 * Chrome Devtools
 * [Subtext](http://www.subtext-lang.org/)
+
+## workbench
+
+A rich REPL for python built in skia
+
+![repl screenshot](docs/screenshot.png)
