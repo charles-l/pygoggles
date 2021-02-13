@@ -19,17 +19,17 @@ line_height = font.getSpacing()
 col_width = font.getWidths([ord('x')])[0]
 
 
-def clamp(l, u, v):
-    return max(min(v, u), l)
-
-
 @dataclass
 class Cell:
     input: Buffer
-    output: str
+    output: object
 
 
 target_scroll = [0, 0]
+
+
+def clamp(l, u, v):
+    return max(min(v, u), l)
 
 
 def scroll(x, y):
@@ -181,8 +181,6 @@ with glfw_window() as window:
         called_plot[0] = True
         return _orig_plot(*args, **kwargs)
 
-    im = None
-
     last_frame = 0
     with skia_surface(window) as surface:
         while (glfw.get_key(window, glfw.KEY_ESCAPE) != glfw.PRESS
@@ -221,12 +219,11 @@ with glfw_window() as window:
                         tree = ast.parse(cells[cur_cell].input.as_str(),
                                          mode='exec')
                         try:
-
                             globs['plt'].plot = wrapped_plot
 
                             globs['np'] = importlib.import_module('numpy')
                             output = exec_block(tree, globs)
-                            cells[cur_cell].output = str(output)
+
                             if called_plot[0]:
                                 output = globs['plt'].gcf()
                                 output.canvas.draw()
@@ -236,7 +233,9 @@ with glfw_window() as window:
                                     output.canvas.get_width_height()[::-1] + (3,))
                                 data = np.dstack(
                                     (data, np.ones((data.shape[0], data.shape[1]), dtype=np.uint8) * 255))
-                                im = skia.Image.fromarray(data)
+                                cells[cur_cell].output = skia.Image.fromarray(data)
+                            else:
+                                cells[cur_cell].output = str(output)
                         except:
                             cells[cur_cell].output = traceback.format_exc()
 
@@ -259,14 +258,43 @@ with glfw_window() as window:
                         canvas.drawString(
                             l, 0, line_height * line, font, input_paint)
                         line += 1
-                    for l in c.output.split('\n'):
-                        canvas.drawString(
-                            l, 0, line_height * line, font, output_paint)
-                        line += 1
+                    if isinstance(c.output, str):
+                        for l in c.output.split('\n'):
+                            canvas.drawString(
+                                l, 0, line_height * line, font, output_paint)
+                            line += 1
+                    elif isinstance(c.output, skia.Image):
+                        canvas.drawImage(c.output, 0, line_height * line, None)
+                        line += np.ceil(c.output.height() / line_height)
                 # draw cursor
                 canvas.drawRect(skia.Rect.MakeXYWH(
                     cursor.column * col_width, cursor.line * line_height + 4, 2, line_height), input_paint)
-                if im is not None:
-                    canvas.drawImage(im, 200, 0, None)
             surface.flushAndSubmit()
             glfw.swap_buffers(window)
+
+
+'''
+Main TODO items
+
+== UI
+* cell layout (put output below input)
+* cell selection (move up/down)
+* wordwise movement, cell movement
+* text selection (with keyboard *and* mouse)
+* copy/paste
+* tab layout for different outputs of the same object
+
+== Serialization and deserialization
+
+== Track inputs and allow more input types
+* Resource -- watched for changes to file/socket/etc (mark dirty, reload and
+  recompute)
+* VariableValue -- an input value that the user can change (e.g. slider,
+  mouse pos)
+* RecordedVariableValue -- record a value (potentially into a circular
+  buffer) and replay it
+
+== Add additional widgets
+* OpenGL output
+* Buttons/sliders/dropdowns
+'''
