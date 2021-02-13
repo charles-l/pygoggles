@@ -181,6 +181,7 @@ with glfw_window() as window:
         called_plot[0] = True
         return _orig_plot(*args, **kwargs)
 
+
     last_frame = 0
     with skia_surface(window) as surface:
         while (glfw.get_key(window, glfw.KEY_ESCAPE) != glfw.PRESS
@@ -219,8 +220,8 @@ with glfw_window() as window:
                         tree = ast.parse(cells[cur_cell].input.as_str(),
                                          mode='exec')
                         try:
+                            globs['plt'].clf()  # clear out plot
                             globs['plt'].plot = wrapped_plot
-
                             globs['np'] = importlib.import_module('numpy')
                             output = exec_block(tree, globs)
 
