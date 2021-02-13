@@ -173,12 +173,10 @@ with glfw_window() as window:
         'matplotlib.pyplot')
 
     # wrap plt.plot
-    called_plot = [False]
-
     _orig_plot = globs['plt'].plot
     @wraps(_orig_plot)
     def wrapped_plot(*args, **kwargs):
-        called_plot[0] = True
+        wrapped_plot.was_called = True
         return _orig_plot(*args, **kwargs)
 
 
@@ -216,16 +214,25 @@ with glfw_window() as window:
                         cursor._pos += 1
                 elif event_type == 'key_combo':
                     mod, key = args
+                    if mod == 'ctrl' and key == 'up':
+                        if cur_cell > 0:
+                            cur_cell -= 1
+                            cursor = Cursor(cells[cur_cell].input)
+                    if mod == 'ctrl' and key == 'down':
+                        if cur_cell + 1 < len(cells):
+                            cur_cell += 1
+                            cursor = Cursor(cells[cur_cell].input)
                     if mod == 'ctrl' and key == 'enter':
                         tree = ast.parse(cells[cur_cell].input.as_str(),
                                          mode='exec')
                         try:
                             globs['plt'].clf()  # clear out plot
                             globs['plt'].plot = wrapped_plot
+                            wrapped_plot.was_called = False
                             globs['np'] = importlib.import_module('numpy')
                             output = exec_block(tree, globs)
 
-                            if called_plot[0]:
+                            if wrapped_plot.was_called:
                                 output = globs['plt'].gcf()
                                 output.canvas.draw()
                                 data = np.fromstring(
@@ -255,10 +262,18 @@ with glfw_window() as window:
                 canvas.clear(skia.Color(255, 255, 255))
                 line = 1
                 for c in cells:
+                    if cursor._buf == c.input:
+                        # draw cursor
+                        canvas.drawRect(skia.Rect.MakeXYWH(
+                            cursor.column * col_width, line_height * (line - 1) + cursor.line * line_height + 4, 2, line_height), input_paint)
+
+                    # display input
                     for l in c.input.as_str().split('\n'):
                         canvas.drawString(
                             l, 0, line_height * line, font, input_paint)
                         line += 1
+
+                    # display output
                     if isinstance(c.output, str):
                         for l in c.output.split('\n'):
                             canvas.drawString(
@@ -267,9 +282,6 @@ with glfw_window() as window:
                     elif isinstance(c.output, skia.Image):
                         canvas.drawImage(c.output, 0, line_height * line, None)
                         line += np.ceil(c.output.height() / line_height)
-                # draw cursor
-                canvas.drawRect(skia.Rect.MakeXYWH(
-                    cursor.column * col_width, cursor.line * line_height + 4, 2, line_height), input_paint)
             surface.flushAndSubmit()
             glfw.swap_buffers(window)
 
