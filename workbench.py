@@ -290,8 +290,6 @@ with glfw_window() as window:
 Main TODO items
 
 == UI
-* cell layout (put output below input)
-* cell selection (move up/down)
 * wordwise movement, cell movement
 * text selection (with keyboard *and* mouse)
 * copy/paste
